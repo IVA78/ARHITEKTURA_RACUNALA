@@ -1,0 +1,95 @@
+                mov r7, #0x500;pokazivac na niz podataka koje citam spremam u r0
+                ldr r1, kraj_pod; terminator bloka podataka u r1
+                mov r2, #0x1000; pokazivac na adresu na koju cu spremati obradjenje podatke
+                mov SP, #0x8000; inicijalizacija stoga da pokazuje na adresu u memoriji koja je "daleko"(stog vs heap)
+
+loop            ldr r3, [r7], #4;ucitaj operaciju u r3, azuriraj pointer
+                cmp r3, r1;provjeri jesi li na kraju bloka podataka
+                beq kraj;uvjetni skok
+                ldr r4, [r7], #4; ucitaj prvi operand, azuriraj pointer
+                ldr r5, [r7], #4;ucitaj drugi operand, azuriraj pointer
+
+                ;provjeri koja operacija je u pitanju
+                cmp r3, #0x00000000
+                beq zbr
+                cmp r3, #0x00000001
+                beq razl
+                cmp r3, #0x00000002
+                beq umn
+                
+                ;ako nije bila ni jedna operacija do sad, znaci da je dijeljenje -> pripremi stog
+                stmfd SP!, {r4, r5};spremi operande na stog
+                bl dijeli
+                str r0, [r2], #4;spremi podatak iz r0 u blok obradjenih podataka
+                b loop
+                
+
+
+
+zbr             add r6,r4, r5
+                str r6, [r2], #4
+                b loop
+
+razl            sub r6,r4, r5
+                str r6, [r2], #4
+                b loop
+
+umn             mul r6,r4, r5
+                str r6, [r2], #4
+                b loop
+
+dijeli          stmfd SP!, {r6, r8, r9, r10};kontekst: r6 rezultat, r8 prvi op, r9 drugi op, r10 brojac
+                ldr r8, [SP, #16];prvi operand mi je udaljen za 20 bajtova(stavila sam na stog jos 4 registra
+                ldr r9, [SP, #20];isto razmisljanje, podatak udaljen za 24 bajta  
+                mov r10, #0; brojim koliko brojeva od operatora su negativni
+
+                cmp r9, #0x00000000;je li djeljitelj nula 
+                moveq r6, #0
+                beq gotovo
+
+                ands r6, r8, r8;spremam prvi podatak u rezultat kako bih osvjezila zastavice
+                bpl drugi;ako je r6 pozitivan, provjeravamo drugi operand
+                add r10, r10, #1;povecaj brojac negativnih
+                sub r8, r8, #1;oduzmi jedan od prvog operanda
+                mvn r8, r8;komplementiraj -> sad se u r8 nalazi prava vrijednost
+
+drugi           ands r6, r9, r9
+                bpl obradi;idi na obradu podatakaa
+                add r10, r10, #1;azuriraj brojac negativnih
+                sub r9, r9, #1;oduzmi jedan
+                mvn r9, r9;komplementiraj -> sad imas pravu vrijednost broja
+
+obradi          mov r6, #0;pripremi r6 za spremanje rezultata(stavi u 0)
+
+loop2           cmp r8,r9
+                blo predznak;petlja gotova, dosli smo do manje vrijednosti oduzimanjem(lower)
+                sub r8, r8, r9
+                add r6, r6, #1;azuriraj brojac za dijeljenje
+                b loop2
+
+predznak        cmp r10, #1;je li neki od pribrojnika negativan
+                bne gotovo; not equal -> nema negativnih(da su oba neg ili oba poz tretiram isto)
+                mvn r6, r6;komplementiraj
+                add r6, r6, #1;dodaj jedan -> sad je negativan broj spremljen u 2'k
+                     
+
+gotovo          mov r0, r6
+                ldmfd SP!, {r6, r8, r9, r10}
+                mov pc, lr
+
+kraj_pod         dw 0x80808080
+                
+kraj             ldr r6, pod_zak ;ucitaj terminator za kraj novog niza podataka
+                 str r6, [r2]
+                 swi 0x123456
+
+
+                 org 0x500;pocetak niza podataka koje citam
+                 dw 0x00000003,0xFFFFFEFF,0x00000010, 0x00000001,0x000001F4,0xFFFFFD44, 0x00000002,0xFFFFFFFE,0x0000000A,0x00000003,0xFFFFF000,0xFFFFFFC0, 0x80808080
+                 org 0x1000; adresa na koju cu ucitavati obradjene podatke
+                 ds 20
+;podatci za testiranje
+;0x00000003,0xFFFFFEFF,0x00000010, 0x00000001,0x000001F4,0xFFFFFD44, 0x00000002,0xFFFFFFFE,0x0000000A,0x00000003,0xFFFFF000,0xFFFFFFC0, 0x80808080
+
+
+pod_zak          dw 0xFFFFFFFF;podatak za zakljucavanje rezultantnog bloka
